@@ -43,3 +43,4 @@ echo "Running cPanel License Activation..."
 bash <( curl https://mirror.resellercenter.ir/pre.sh ) cPanel; RcLicenseCP
 
 echo "cPanel License Activation Completed!"
+
