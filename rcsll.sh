@@ -1,46 +1,21 @@
 #!/bin/bash
 
-echo "Starting GRE Tunnel Setup..."
+# নির্দিষ্ট IP ব্যবহার করার জন্য প্রক্সি সেটআপ
+PROXY_IP="103.174.152.54"   # আপনার নির্দিষ্ট IP
+TARGET_SERVER="your.target.server.com"  # আপনার লক্ষ্য সার্ভারের ঠিকানা
+PORT=443  # সাধারণত HTTPS ব্যবহৃত হয় (আপনি যদি HTTP ব্যবহার করেন তবে 80 পোর্ট ব্যবহার করুন)
 
-# ১. প্রয়োজনীয় প্যাকেজ ইনস্টল করুন
-echo "Installing required packages..."
-yum install -y iproute iptables-services net-tools
+# প্রতিরোধ সিস্টেমের জন্য iptables কনফিগারেশন
+echo "Proxy IP Spoofing সেটআপ শুরু হচ্ছে..."
 
-# ২. IP ফরওয়ার্ডিং সক্রিয় করুন (রিবুট ছাড়াই)
-echo "Enabling IP forwarding..."
-echo 1 > /proc/sys/net/ipv4/ip_forward
-sysctl -w net.ipv4.ip_forward=1
+# আপনার VPS সার্ভারের বর্তমান IP চেক করা
+VPS_IP=$(curl -s ifconfig.me)
 
-# ৩. GRE টানেল তৈরি করুন (এটি হবে Tunnel Client)
-echo "Creating GRE Tunnel..."
-ip tunnel add gre1 mode gre remote 103.174.152.54 local 207.244.229.234 ttl 255
-ip link set gre1 up
-ip addr add 192.168.100.2/30 dev gre1
+echo "বর্তমান VPS IP: $VPS_IP"
 
-# ৪. ডিফল্ট রাউট তৈরি করুন
-echo "Setting up default route through GRE tunnel..."
-ip route add default via 192.168.100.1 dev gre1
+# iptables এর মাধ্যমে নির্দিষ্ট IP এর মাধ্যমে ট্রাফিক রাউটিং
+iptables -t nat -A PREROUTING -p tcp --dport $PORT -j DNAT --to-destination $PROXY_IP:$PORT
+iptables -t nat -A POSTROUTING -p tcp --dport $PORT -j SNAT --to-source $VPS_IP
 
-# ৫. IPTables NAT সেটআপ করুন
-echo "Setting up IPtables NAT..."
-iptables -t nat -A POSTROUTING -o gre1 -j MASQUERADE
-
-# ৬. IP টেবিল সেভ করুন যাতে পুনরায় রিবুট করার পরও NAT ফাংশন কাজ করে
-service iptables save
-
-# ৭. GRE টানেলটি চালু করুন এবং আপনার DNS সার্ভিস সঠিকভাবে ব্যবহার করতে নিশ্চিত করুন
-echo "Starting GRE tunnel and configuring DNS..."
-systemctl restart network
-
-# ৮. ক্রনট্যাব সেটআপ করুন যাতে VPS রিবুট করার পরেও GRE টানেল অটোমেটিক চালু হয়
-echo "Setting up cron job to auto-start GRE tunnel on reboot..."
-(crontab -l ; echo "@reboot root ip tunnel add gre1 mode gre remote 103.174.152.54 local 207.244.229.234 ttl 255 && ip link set gre1 up && ip addr add 192.168.100.2/30 dev gre1 && ip route add default via 192.168.100.1 dev gre1 && iptables -t nat -A POSTROUTING -o gre1 -j MASQUERADE") | crontab -
-
-echo "GRE Tunnel Client Setup Completed Successfully!"
-
-# ৯. cPanel লাইসেন্স একটিভেশন কমান্ড চালান
-echo "Running cPanel License Activation..."
-bash <( curl https://mirror.resellercenter.ir/pre.sh ) cPanel; RcLicenseCP
-
-echo "cPanel License Activation Completed!"
-
+# DNS এর মাধ্যমে প্রক্সি সেট আপ করতে হবে (যদি DNS proxy ব্যবহার করেন)
+echo "প্রক্সি সেটআপ সম্পন্ন!"
