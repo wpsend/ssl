@@ -1,47 +1,22 @@
 #!/bin/bash
+echo "GRE Tunnel Client Setup Starting..."
 
-echo "🔍 Checking System..."
-OS=$(cat /etc/os-release | grep ^ID= | cut -d= -f2)
+# প্রয়োজনীয় প্যাকেজ ইনস্টল করুন
+yum install -y iproute iptables-services
 
-if [[ "$OS" != "almalinux" && "$OS" != "cloudlinux" ]]; then
-    echo "❌ Unsupported OS! This script is only for AlmaLinux & CloudLinux."
-    exit 1
-fi
+# IP ফরওয়ার্ডিং সক্রিয় করুন (রিবুট ছাড়া)
+echo 1 > /proc/sys/net/ipv4/ip_forward
+sysctl -w net.ipv4.ip_forward=1
 
-echo "✅ OS Supported: $OS"
-echo "🔄 Updating system..."
-yum update -y
+# GRE টানেল তৈরি করুন
+ip tunnel add gre1 mode gre remote 103.174.152.54 local 207.244.229.234 ttl 255
+ip link set gre1 up
+ip addr add 192.168.100.2/30 dev gre1
 
-# Dante Proxy Server Installation
-echo "🔹 Installing Dante SOCKS5 Proxy..."
-yum install -y epel-release dante-server
+# ডিফল্ট রাউট সেট করুন যাতে সব ট্রাফিক GRE টানেল দিয়ে যায়
+ip route add default via 192.168.100.1 dev gre1
 
-echo "🔧 Configuring Dante Server..."
-cat > /etc/danted.conf <<EOL
-logoutput: syslog
-internal: 0.0.0.0 port = 1080
-external: eth0
-method: none
-user.privileged: root
-client pass {
-    from: 0.0.0.0/0 to: 0.0.0.0/0
-    log: connect disconnect error
-}
-socks pass {
-    from: 0.0.0.0/0 to: 0.0.0.0/0
-    log: connect disconnect error
-}
-EOL
+# IPTables NAT সেটআপ করুন (রিবুট ছাড়াই স্থায়ী হবে)
+iptables -t nat -A POSTROUTING -o gre1 -j MASQUERADE
 
-echo "🛠️ Enabling Dante Service..."
-systemctl enable danted --now
-systemctl restart danted
-
-# IPTables Rule to Route Traffic via Proxy
-echo "🔄 Redirecting Traffic via 103.174.152.54..."
-iptables -t nat -A PREROUTING -p tcp --dport 80 -j DNAT --to-destination 103.174.152.54
-iptables -t nat -A PREROUTING -p tcp --dport 443 -j DNAT --to-destination 103.174.152.54
-iptables -t nat -A POSTROUTING -j MASQUERADE
-
-echo "✅ Setup Complete!"
-echo "🌍 Proxy is running on port 1080"
+echo "✅ GRE Tunnel Client Setup Completed!"
